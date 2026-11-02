@@ -23,7 +23,7 @@ MODE = os.environ.get("MODE", "cut")
 FEED = os.environ.get("DUKA_FEED", "https://datafeed.dukascopy.com/datafeed")
 LIVE_URL = os.environ.get("LIVE_URL", "https://api.gold-api.com/price/XAU")
 OUT = Path(os.environ.get("OUT_DIR", "data"))
-SYMBOL, KEEP4, KEEP15 = "XAUUSD", 300, 500
+SYMBOL, KEEP4, KEEP15 = "XAUUSD", 300, 1000
 FMT = "%Y-%m-%d %H:%M:00"
 HEADERS = {"User-Agent": "Mozilla/5.0 (xauusd-analyzer; GitHub Action)"}
 CANDLE, TICK = ">5i1f", ">3i2f"   # Kerze: Zeit(s), Open, Close, Low, High, Volumen | Tick: Zeit(ms), Ask, Bid, AskVol, BidVol
@@ -145,7 +145,7 @@ def main() -> None:
 
     # 1) Stunden-Kerzen der letzten drei abgeschlossenen Monate (für 4H)
     hour_rows = []
-    first_min_day = min(today - dt.timedelta(days=9), today.replace(day=1))
+    first_min_day = min(today - dt.timedelta(days=16), today.replace(day=1))
     for n in (3, 2, 1):
         y, m = month_back(today.year, today.month, n)
         rows = hours_of_month(y, m)

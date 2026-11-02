@@ -29,6 +29,8 @@ canvas{display:block;width:100%;touch-action:none;cursor:crosshair}
 label.f{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
 input[type=text],input[type=password],input[type=time],select{width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}
 .row{display:flex;gap:8px}.row>*{flex:1}
+.tune input{width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);font:inherit}
+.tune td,.tune th{border:none;padding:3px 4px}
 .chk{display:flex;align-items:center;gap:7px;font-size:13px;margin:5px 0}
 button{font:inherit;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer}
 button.primary{background:var(--btn);color:var(--btnText);border-color:var(--btn);font-weight:600}
@@ -115,6 +117,18 @@ th{color:var(--muted);font-weight:500}
         <label class="chk"><input type="checkbox" data-t="f4"> 4H FVG</label>
         <label class="chk"><input type="checkbox" data-t="openOnly" checked> nur offene FVG</label>
       </div>
+      <details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px"><b>Feineinstellung Linien</b> (wie deine Handanalyse)</summary>
+        <table class="tune" id="tune" style="margin-top:6px">
+          <tr><th></th><th>4H</th><th>15min</th></tr>
+          <tr><td title="Anzahl Linien über dem Kurs">Linien oben</td><td><input data-k="above" data-tf="h4" type="number" min="0" max="6" step="1"></td><td><input data-k="above" data-tf="m15" type="number" min="0" max="8" step="1"></td></tr>
+          <tr><td title="Anzahl Linien unter dem Kurs">Linien unten</td><td><input data-k="below" data-tf="h4" type="number" min="0" max="6" step="1"></td><td><input data-k="below" data-tf="m15" type="number" min="0" max="8" step="1"></td></tr>
+          <tr><td title="Wie stark der Kurs am Wendepunkt reagiert haben muss (in ATR). Höher = nur grosse Wendepunkte">Mind. Reaktion (ATR)</td><td><input data-k="minReact" data-tf="h4" type="number" min="0.5" max="8" step="0.1"></td><td><input data-k="minReact" data-tf="m15" type="number" min="0.5" max="10" step="0.1"></td></tr>
+          <tr><td title="Mindestabstand zwischen zwei Linien (in ATR)">Mind. Abstand (ATR)</td><td><input data-k="spacing" data-tf="h4" type="number" min="0.2" max="6" step="0.1"></td><td><input data-k="spacing" data-tf="m15" type="number" min="0.2" max="10" step="0.1"></td></tr>
+          <tr><td title="Kerzen links/rechts, die ein Wendepunkt überragen muss">Swing-Breite</td><td><input data-k="L" data-tf="h4" type="number" min="1" max="10" step="1"></td><td><input data-k="L" data-tf="m15" type="number" min="1" max="15" step="1"></td></tr>
+        </table>
+        <div class="btns"><button id="tuneReset">Standardwerte</button></div>
+        <div class="note" id="atrInfo"></div>
+      </details>
     </div>
 
     <div class="card">
@@ -142,7 +156,7 @@ th{color:var(--muted);font-weight:500}
 const CFG = {
   symbol: 'XAU/USD',
   bars4h: 300,          // Anzahl 4H-Kerzen pro Abruf
-  bars15: 500,          // Anzahl 15min-Kerzen pro Abruf
+  bars15: 1000,         // Anzahl 15min-Kerzen (ca. 10 Handelstage, damit ältere Wendepunkte erfasst werden)
   colors: {
     bg: '#8a939e',                     // mittelgrau, damit Schwarz UND Weiss sichtbar sind
     grid: 'rgba(255,255,255,0.13)',
@@ -156,9 +170,13 @@ const CFG = {
     fvgBear: 'rgba(229,57,53,0.28)',   // FVG Sell-Kerze: verblasstes Rot
     price: '#ffffff'
   },
-  sr:   { h4:{L:3,R:3,tol:0.35,perSide:3}, m15:{L:5,R:5,tol:0.4,perSide:3} },
+  /* S/R wie von Hand gezeichnet: markante Wendepunkte (Reaktion >= minReact·ATR), Linie am Extrem des stärksten
+     Wendepunkts, vom Kurs aus nach aussen mit Mindestabstand (spacing·ATR). Werte sind im UI einstellbar. */
+  sr:   { h4:{L:3,R:3,minReact:3.0,tol:0.3,spacing:2.0,above:2,below:2},
+          m15:{L:4,R:4,minReact:3.0,tol:0.5,spacing:3.0,above:3,below:3},
+          dedupATR4:0.25 },   // 15min-Linie entfällt, wenn eine 4H-Linie näher als 0.25·ATR(4H) liegt
   zone: { impulseATR:1.5, perSide:2 },
-  fvg:  { minATR:0.25, lookback15:200, lookback4:120 }
+  fvg:  { minATR:0.25, lookback15:200, lookback4:120, mitigation:'close', skipSessionGaps:false }
 };
 
 /* =====================================================================
@@ -169,6 +187,9 @@ const LS_SET = 'xau_settings_v4', LS_RES = 'xau_last_result_v1';
 const show = {lv4:true, lv15:true, z4:true, z15:true, f15:true, f4:false, openOnly:true};
 let S = loadSettings();
 let RESULT = null;
+const SR_DEFAULT = JSON.parse(JSON.stringify(CFG.sr));
+const LS_TUNE = 'xau_tune_v1';
+try{ const t=JSON.parse(localStorage.getItem(LS_TUNE)||'null'); if(t){ Object.assign(CFG.sr.h4,t.h4||{}); Object.assign(CFG.sr.m15,t.m15||{}); } }catch(e){}
 
 function loadSettings(){ try{ return {...DEFAULTS, ...JSON.parse(localStorage.getItem(LS_SET)||'{}')}; }catch(e){ return {...DEFAULTS}; } }
 function saveSettings(){ try{ localStorage.setItem(LS_SET, JSON.stringify(S)); }catch(e){} }
@@ -257,28 +278,42 @@ function atr(c, p=14){
 }
 function ema(v, p){ const k=2/(p+1), out=[]; v.forEach((x,i)=>out.push(i?x*k+out[i-1]*(1-k):x)); return out; }
 
-/* Support/Resistance: Swing-Pivots → Cluster (Toleranz in ATR) → Score aus Berührungen, Aktualität, Nähe */
-function srLevels(c, A, {L,R,tol,perSide}, price){
-  const n = c.length, a = A[n-1], T = a*tol, pts = [];
-  for(let i=L;i<n-R;i++){
+/* Support/Resistance nach Trader-Methode:
+   1. Swing-Hochs/-Tiefs (L Kerzen links, R rechts)
+   2. nur markante Wendepunkte: Kursreaktion danach bzw. davor >= minReact · ATR
+   3. nahe Wendepunkte (tol · ATR) bilden ein Niveau; Linie = Extrem des Wendepunkts mit der stärksten Reaktion
+   4. vom aktuellen Kurs nach aussen: nächstliegende Niveaus mit Mindestabstand spacing · ATR */
+function srLevels(c, A, P, price, exclude=[], exTol=0){
+  const n = c.length, a = A[n-1], W = 12, pts = [];
+  for(let i=P.L;i<n-P.R;i++){
     let isH=true, isL=true;
-    for(let k=i-L;k<=i+R;k++){ if(k===i) continue; if(c[k].h>c[i].h) isH=false; if(c[k].l<c[i].l) isL=false; }
-    if(isH) pts.push({p:c[i].h,i}); if(isL) pts.push({p:c[i].l,i});
+    for(let k=i-P.L;k<=i+P.R;k++){ if(k===i) continue; if(c[k].h>c[i].h) isH=false; if(c[k].l<c[i].l) isL=false; }
+    const lo=Math.max(0,i-W), hi=Math.min(n-1,i+W);
+    if(isH){
+      let mnR=Infinity, mnL=Infinity; for(let k=i+1;k<=hi;k++) mnR=Math.min(mnR,c[k].l); for(let k=lo;k<i;k++) mnL=Math.min(mnL,c[k].l);
+      const react = Math.max(c[i].h-mnR, c[i].h-mnL)/A[i];
+      if(react>=P.minReact) pts.push({p:c[i].h, i, react});
+    }
+    if(isL){
+      let mxR=-Infinity, mxL=-Infinity; for(let k=i+1;k<=hi;k++) mxR=Math.max(mxR,c[k].h); for(let k=lo;k<i;k++) mxL=Math.max(mxL,c[k].h);
+      const react = Math.max(mxR-c[i].l, mxL-c[i].l)/A[i];
+      if(react>=P.minReact) pts.push({p:c[i].l, i, react});
+    }
   }
   pts.sort((x,y)=>x.p-y.p);
-  const cl = [];
+  const groups=[];
   for(const q of pts){
-    const last = cl[cl.length-1];
-    if(last && q.p-last.mean <= T){ last.pts.push(q); last.mean = last.pts.reduce((s,z)=>s+z.p,0)/last.pts.length; }
-    else cl.push({pts:[q], mean:q.p});
+    const g=groups[groups.length-1];
+    if(g && q.p-g[g.length-1].p <= P.tol*a) g.push(q); else groups.push([q]);
   }
-  const lv = cl.map(k=>{
-    const lastI = Math.max(...k.pts.map(z=>z.i));
-    return {price:k.mean, touches:k.pts.length, lastT:c[lastI].t,
-            score: k.pts.length + 1.5*lastI/n - 0.08*Math.abs(k.mean-price)/a};
-  });
-  const pick = (arr, kind) => arr.sort((x,y)=>y.score-x.score).slice(0,perSide).map(x=>({...x, kind}));
-  return [...pick(lv.filter(x=>x.price>price),'R'), ...pick(lv.filter(x=>x.price<=price),'S')].sort((x,y)=>y.price-x.price);
+  const lv = groups.filter(g=>!exclude.some(x=>Math.abs(x-g[0].p)<exTol && Math.abs(x-g[g.length-1].p)<exTol*2)).map(g=>{ const best=g.reduce((x,y)=>y.react>x.react?y:x); const lastI=Math.max(...g.map(z=>z.i));
+                            return {price:best.p, touches:g.length, react:best.react, lastT:c[lastI].t}; });
+  const walk = (arr, max, kind) => { const out=[]; for(const l of arr){ if(out.length>=max) break;
+      const ref = out.length ? out[out.length-1].price : null;
+      if(ref===null || Math.abs(l.price-ref) >= P.spacing*a) out.push({...l, kind}); } return out; };
+  const above = walk(lv.filter(x=>x.price>price).sort((x,y)=>x.price-y.price), P.above, 'R');
+  const below = walk(lv.filter(x=>x.price<=price).sort((x,y)=>y.price-x.price), P.below, 'S');
+  return [...above, ...below].sort((x,y)=>y.price-x.price);
 }
 
 /* Buy-/Sell-Zonen: letzte Gegenkerze vor einem Impuls (> k·ATR), solange nicht per Schlusskurs gebrochen */
@@ -315,14 +350,15 @@ function findFVG(c, A, {minATR}, lookback){
   const n = c.length, out = [];
   for(let i=Math.max(1,n-lookback); i<n-1; i++){
     const a=c[i-1], d=c[i+1], m=A[i]*minATR;
-    if(a.te && (c[i].t!==a.te || d.t!==c[i].te)) continue;   // keine FVGs über Handelspausen (Wochenende, Tagesschluss)
+    if(CFG.fvg.skipSessionGaps && a.te && (c[i].t!==a.te || d.t!==c[i].te)) continue;   // optional: keine FVGs über Handelspausen
     let f=null;
     if(d.l>a.h && d.l-a.h>=m) f={type:'bull', top:d.l, bot:a.h};
     else if(d.h<a.l && a.l-d.h>=m) f={type:'bear', top:a.l, bot:d.h};
     if(!f) continue;
     f.i=i; f.t0=c[i-1].t; f.t1=null; f.open=true;
     for(let j=i+2;j<n;j++){
-      if((f.type==='bull' && c[j].l<=f.bot) || (f.type==='bear' && c[j].h>=f.top)){ f.open=false; f.t1=c[j].t; break; }
+      const cl = CFG.fvg.mitigation==='close';
+      if((f.type==='bull' && (cl?c[j].c:c[j].l)<=f.bot) || (f.type==='bear' && (cl?c[j].c:c[j].h)>=f.top)){ f.open=false; f.t1=c[j].t; break; }   // wie TradingView-Indikator: geschlossen erst bei Schlusskurs jenseits der Lücke
     }
     out.push(f);
   }
@@ -334,11 +370,12 @@ function analyze(c4, c15, meta){
   const price = c15[c15.length-1].c;
   const e50 = ema(c4.map(x=>x.c),50), n4 = c4.length;
   const slope = e50[n4-1]-e50[n4-6];
+  const lv4 = srLevels(c4, A4, CFG.sr.h4, price);
   const bias = c4[n4-1].c>e50[n4-1] && slope>0 ? 'Bullisch' : c4[n4-1].c<e50[n4-1] && slope<0 ? 'Bärisch' : 'Neutral';
   return {
     meta:{...meta, price, atr4:A4[n4-1], atr15:A15[c15.length-1], bias, ema50_4h:e50[n4-1], lastBar15:c15[c15.length-1].t, lastBar4:c4[n4-1].t},
-    lv4: srLevels(c4, A4, CFG.sr.h4, price),
-    lv15: srLevels(c15, A15, CFG.sr.m15, price),
+    lv4: lv4,
+    lv15: srLevels(c15, A15, CFG.sr.m15, price, lv4.map(l=>l.price), CFG.sr.dedupATR4*A4[n4-1]),
     z4: findZones(c4, A4, CFG.zone, price).map(z=>({...z, tf:'4H'})),
     z15: findZones(c15, A15, CFG.zone, price).map(z=>({...z, tf:'15m'})),
     f4: findFVG(c4, A4, CFG.fvg, CFG.fvg.lookback4).map(f=>({...f, tf:'4H'})),
@@ -472,7 +509,7 @@ class Chart{
 function lineObjs(lv, tf){
   const four = tf==='4H';
   return lv.map(l=>({price:l.price, color:four?CFG.colors.sr4h:CFG.colors.sr15, fg:four?'#000':'#fff', w:four?2:1.5,
-                      tag:`${tf} ${l.kind==='R'?'Resistance':'Support'} · ${l.touches}×`}));
+                      tag:`${tf} ${l.kind==='R'?'Resistance':'Support'}`}));
 }
 function overlays(R, chart){
   const fv = f => !show.openOnly || f.open;
@@ -569,6 +606,7 @@ async function run(trigger){
     RESULT = analyze(c4, c15, {tz:S.tz, cut:fixed?cut:null, demo, source:label, runAt:`${n.date} ${n.time}`, trigger});
     try{ localStorage.setItem(LS_RES, JSON.stringify(RESULT)); }catch(e){}
     renderPanels(RESULT); redraw();
+    $('atrInfo').textContent = `1 ATR = ${fmt(RESULT.meta.atr4)} $ (4H) · ${fmt(RESULT.meta.atr15)} $ (15min)`;
     $('status').innerHTML = `Letzte Analyse: <b>${n.date} ${n.time}</b> · Datenstand ${RESULT.meta.lastBar15.slice(0,16)}`;
   }catch(e){
     msg(e.message, 'err');
@@ -602,6 +640,21 @@ $('jsonBtn').onclick=()=>{ const {c4,c15,...rest}=RESULT; download(`XAUUSD_Analy
 $('copyBtn').onclick=async()=>{ try{ await navigator.clipboard.writeText(summaryText(RESULT)); msg('Zusammenfassung kopiert.','ok'); }catch(e){ msg('Kopieren nicht möglich: '+e.message,'err'); } };
 
 fillForm();
+function fillTune(){ document.querySelectorAll('#tune input').forEach(i=>{ i.value=CFG.sr[i.dataset.tf][i.dataset.k]; }); }
+function reanalyze(){
+  if(!RESULT) return;
+  RESULT = analyze(RESULT.c4, RESULT.c15, RESULT.meta);
+  renderPanels(RESULT); redraw();
+  $('atrInfo').textContent = `1 ATR = ${fmt(RESULT.meta.atr4)} $ (4H) · ${fmt(RESULT.meta.atr15)} $ (15min)`;
+}
+document.querySelectorAll('#tune input').forEach(i=>i.onchange=()=>{
+  const v=parseFloat(i.value); if(isNaN(v)) return;
+  CFG.sr[i.dataset.tf][i.dataset.k]=v; if(i.dataset.k==='L') CFG.sr[i.dataset.tf].R=v;
+  try{ localStorage.setItem(LS_TUNE, JSON.stringify({h4:CFG.sr.h4, m15:CFG.sr.m15})); }catch(e){}
+  reanalyze();
+});
+$('tuneReset').onclick=()=>{ CFG.sr=JSON.parse(JSON.stringify(SR_DEFAULT)); try{localStorage.removeItem(LS_TUNE);}catch(e){} fillTune(); reanalyze(); };
+fillTune();
 try{ const saved=JSON.parse(localStorage.getItem(LS_RES)||'null'); if(saved&&saved.c15){ RESULT=saved; renderPanels(RESULT); redraw(); $('status').textContent=`Gespeicherte Analyse vom ${saved.meta.runAt}`; } }catch(e){}
 run('initial');
 tick(); setInterval(tick, 15000);
