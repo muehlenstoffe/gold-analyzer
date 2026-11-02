@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XAUUSD Chartanalyse – 4H & 15min</title>
+<style>
+:root{--bg:#eef0f3;--panel:#ffffff;--text:#1d2330;--muted:#5d6675;--border:#d6dae0;--accent:#b97800;--btn:#1d2330;--btnText:#ffffff;--ok:#1a7f4b;--err:#b3261e;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#121519;--panel:#1b1f25;--text:#e7e9ec;--muted:#9aa3ae;--border:#2e343c;--accent:#ffb020;--btn:#e7e9ec;--btnText:#121519;--ok:#4cc38a;--err:#ff6b60;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--border);background:var(--panel)}
+h1{font-size:18px;margin:0;letter-spacing:.2px}
+h1 span{color:var(--accent)}
+.status{color:var(--muted);font-size:13px}
+.status b{color:var(--text)}
+main{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:14px;padding:14px;max-width:1800px;margin:0 auto}
+@media (max-width:1050px){main{grid-template-columns:1fr}}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px}
+.card h2{font-size:14px;margin:0 0 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.card h2 small{font-weight:400;color:var(--muted);font-size:12px}
+.chartwrap{position:relative;width:100%;border-radius:6px;overflow:hidden}
+canvas{display:block;width:100%;touch-action:none;cursor:crosshair}
+#c15{height:600px}#c4h{height:320px}
+@media (max-width:700px){#c15{height:440px}#c4h{height:260px}}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:18px;height:10px;vertical-align:middle;margin-right:5px;border-radius:2px}
+label.f{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
+input[type=text],input[type=password],input[type=time],select{width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.chk{display:flex;align-items:center;gap:7px;font-size:13px;margin:5px 0}
+button{font:inherit;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer}
+button.primary{background:var(--btn);color:var(--btnText);border-color:var(--btn);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.toggles{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+td,th{padding:4px 4px;border-bottom:1px solid var(--border);text-align:left;font-variant-numeric:tabular-nums}
+th{color:var(--muted);font-weight:500}
+.tag{display:inline-block;padding:0 6px;border-radius:4px;font-size:11px;font-weight:600}
+.t4{background:#ff8c00;color:#000}.t15{background:#000;color:#fff}
+.tb{background:rgba(0,170,80,.2);color:var(--ok)}.ts{background:rgba(220,50,50,.18);color:var(--err)}
+.msg{font-size:13px;margin-top:8px;padding:8px;border-radius:6px;display:none}
+.msg.err{display:block;background:rgba(220,50,50,.12);color:var(--err)}
+.msg.ok{display:block;background:rgba(0,160,80,.12);color:var(--ok)}
+.msg.info{display:block;background:rgba(120,130,150,.15);color:var(--text)}
+.scen{font-size:13px;line-height:1.5}
+.scen div{margin-bottom:8px;padding:8px;border-radius:6px;background:var(--bg)}
+.note{font-size:11.5px;color:var(--muted);margin-top:6px}
+.demo-badge{display:none;background:#7a5af8;color:#fff;font-size:11px;padding:2px 7px;border-radius:4px;margin-left:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1><span>XAU/USD</span> Chartanalyse · 4H &amp; 15min <span id="demoBadge" class="demo-badge">DEMO-DATEN</span></h1>
+  <div class="status" id="live">Live-Kurs wird geladen …</div>
+  <div class="status" id="status">Bereit.</div>
+</header>
+<main>
+  <div class="col">
+    <div class="card">
+      <h2>15min – vollständige Analyse <small>Mausrad = Zoom · Ziehen = Verschieben · Doppelklick = Reset</small></h2>
+      <div class="chartwrap"><canvas id="c15"></canvas></div>
+      <div class="legend">
+        <span><i style="background:#ff8c00"></i>4H Support/Resistance</span>
+        <span><i style="background:#000"></i>15min Support/Resistance</span>
+        <span><i style="background:rgba(255,255,255,.35);border-top:2px solid #fff;border-bottom:2px solid #fff"></i>Buy-/Sell-Zone</span>
+        <span><i style="background:rgba(0,200,83,.35)"></i>FVG Buy-Kerze</span>
+        <span><i style="background:rgba(229,57,53,.35)"></i>FVG Sell-Kerze</span>
+        <span><i style="background:#ffd54a"></i>Live-Kurs</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>4H – Übergeordneter Kontext</h2>
+      <div class="chartwrap"><canvas id="c4h"></canvas></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="card">
+      <h2>Einstellungen</h2>
+      <label class="f" for="src">Datenquelle</label>
+      <select id="src">
+        <option value="github">XAU/USD Spot – Dukascopy via GitHub (täglich 07:00)</option>
+        <option value="demo">Demo-Daten (offline)</option>
+      </select>
+
+      <div class="row">
+        <div><label class="f" for="runTime">Analysezeit</label><input type="time" id="runTime" value="07:00"></div>
+        <div><label class="f" for="tz">Zeitzone</label>
+          <select id="tz">
+            <option>Europe/Zurich</option><option>Europe/Berlin</option><option>Europe/Vienna</option><option>Europe/London</option><option>America/New_York</option><option>UTC</option>
+          </select></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="auto"> Täglich automatisch ausführen (Tab offen lassen)</label>
+      <label class="chk"><input type="checkbox" id="fixCut"> Daten bei Analysezeit abschneiden (Stand 07:00)</label>
+      <label class="chk"><input type="checkbox" id="skipWe"> Auto-Analyse am Wochenende überspringen</label>
+      <div class="btns">
+        <button class="primary" id="runBtn">Jetzt analysieren</button>
+        <button id="saveBtn">Speichern</button>
+      </div>
+      <div class="note" id="nextRun"></div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Anzeige</h2>
+      <div class="toggles">
+        <label class="chk"><input type="checkbox" data-t="lv4" checked> 4H S/R</label>
+        <label class="chk"><input type="checkbox" data-t="lv15" checked> 15min S/R</label>
+        <label class="chk"><input type="checkbox" data-t="z4" checked> 4H Zonen</label>
+        <label class="chk"><input type="checkbox" data-t="z15" checked> 15min Zonen</label>
+        <label class="chk"><input type="checkbox" data-t="f15" checked> 15min FVG</label>
+        <label class="chk"><input type="checkbox" data-t="f4"> 4H FVG</label>
+        <label class="chk"><input type="checkbox" data-t="openOnly" checked> nur offene FVG</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Zusammenfassung <small id="asOf"></small></h2>
+      <div id="summary" class="note">Noch keine Analyse.</div>
+    </div>
+
+    <div class="card">
+      <h2>Szenarien für weitere Schritte</h2>
+      <div id="scen" class="scen note">–</div>
+      <div class="note">Rein technische Auswertung, keine Anlageberatung.</div>
+      <div class="btns">
+        <button id="pngBtn" disabled>15min-Chart als PNG</button>
+        <button id="jsonBtn" disabled>Analyse als JSON</button>
+        <button id="copyBtn" disabled>Text kopieren</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+/* =====================================================================
+   KONFIGURATION – Farben und Parameter (hier anpassen)
+   ===================================================================== */
+const CFG = {
+  symbol: 'XAU/USD',
+  bars4h: 300,          // Anzahl 4H-Kerzen pro Abruf
+  bars15: 500,          // Anzahl 15min-Kerzen pro Abruf
+  colors: {
+    bg: '#8a939e',                     // mittelgrau, damit Schwarz UND Weiss sichtbar sind
+    grid: 'rgba(255,255,255,0.13)',
+    axisBg: '#7a838e', axisText: '#101318',
+    bull: '#0f8f78', bear: '#c93a3a',
+    sr4h: '#ff8c00',                   // 4H Support/Resistance: Orange
+    sr15: '#000000',                   // 15min Support/Resistance: Schwarz
+    zoneLine: '#ffffff',               // Zonen: weisse Anfangs- und Endlinie
+    zoneFill: 'rgba(255,255,255,0.20)',// Zonen: verblasste weisse Fläche
+    fvgBull: 'rgba(0,200,83,0.28)',    // FVG Buy-Kerze: verblasstes Grün
+    fvgBear: 'rgba(229,57,53,0.28)',   // FVG Sell-Kerze: verblasstes Rot
+    price: '#ffffff'
+  },
+  sr:   { h4:{L:3,R:3,tol:0.35,perSide:3}, m15:{L:5,R:5,tol:0.4,perSide:3} },
+  zone: { impulseATR:1.5, perSide:2 },
+  fvg:  { minATR:0.25, lookback15:200, lookback4:120 }
+};
+
+/* =====================================================================
+   Einstellungen & Speicher
+   ===================================================================== */
+const DEFAULTS = {src:'github', runTime:'07:00', tz:'Europe/Zurich', auto:true, fixCut:true, skipWe:true, lastAuto:''};
+const LS_SET = 'xau_settings_v4', LS_RES = 'xau_last_result_v1';
+const show = {lv4:true, lv15:true, z4:true, z15:true, f15:true, f4:false, openOnly:true};
+let S = loadSettings();
+let RESULT = null;
+
+function loadSettings(){ try{ return {...DEFAULTS, ...JSON.parse(localStorage.getItem(LS_SET)||'{}')}; }catch(e){ return {...DEFAULTS}; } }
+function saveSettings(){ try{ localStorage.setItem(LS_SET, JSON.stringify(S)); }catch(e){} }
+const $ = id => document.getElementById(id);
+
+function nowInTz(tz){
+  const parts = new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',weekday:'short'}).formatToParts(new Date());
+  const g = t => (parts.find(p=>p.type===t)||{}).value;
+  return {date:`${g('year')}-${g('month')}-${g('day')}`, time:`${g('hour')}:${g('minute')}`, wd:g('weekday')};
+}
+const fmt = v => v==null||isNaN(v) ? '–' : Number(v).toFixed(2);
+
+/* =====================================================================
+   Datenabruf – Kerzen: Dukascopy (via GitHub Action) · Live-Kurs: gold-api.com
+   ===================================================================== */
+const MIN = {'15min':15, '4h':240};
+const pad2 = n => String(n).padStart(2,'0');
+const _dtf = {};
+function tzStr(ms, tz){
+  const f = _dtf[tz] || (_dtf[tz] = new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}));
+  const p = f.formatToParts(new Date(ms)), g = t => p.find(x=>x.type===t).value;
+  return `${g('year')}-${g('month')}-${g('day')} ${g('hour')}:${g('minute')}:00`;
+}
+
+/* Quelle 1: JSON, das die GitHub Action (scripts/fetch_xauusd.py) täglich ins Repository schreibt */
+let FILE_META = null;
+async function loadGithubFile(){
+  let r;
+  try{ r = await fetch('data/xauusd.json?v='+Date.now(), {cache:'no-store'}); }
+  catch(e){ throw new Error('data/xauusd.json nicht erreichbar. Die Seite muss über GitHub Pages laufen (nicht als lokale Datei).'); }
+  if(!r.ok) throw new Error(`data/xauusd.json fehlt (HTTP ${r.status}). Ist die GitHub Action schon einmal gelaufen?`);
+  const j = await r.json();
+  FILE_META = {generated:j.generated, cut:j.cut, source:j.source};
+  return {c4:j.c4, c15:j.c15, label:j.source||'XAU/USD Spot'};
+}
+
+/* Live-Kurs: gold-api.com – kostenlos, ohne Key, Browser-Zugriff (CORS) erlaubt, Update alle 30 s */
+let LIVE = null;
+async function updateLive(){
+  try{
+    const r = await fetch('https://api.gold-api.com/price/XAU', {cache:'no-store'});
+    const j = await r.json();
+    if(typeof j.price!=='number') throw new Error('kein Preis');
+    LIVE = {price:j.price, at:j.updatedAt};
+    const t = new Date(j.updatedAt).toLocaleTimeString('de-CH',{timeZone:S.tz, hour:'2-digit', minute:'2-digit'});
+    $('live').innerHTML = `Live XAU/USD <b>${fmt(j.price)}</b> <span class="status">(${t}, gold-api.com)</span>`;
+  }catch(e){ $('live').textContent = 'Live-Kurs nicht verfügbar'; }
+  redraw();
+}
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+/* Demo-Daten: reproduzierbarer Random-Walk, 15min aggregiert zu 4H */
+function demoData(cutStr){
+  let seed = 12345; const rnd = () => (seed = (seed*16807)%2147483647)/2147483647;
+  const gauss = () => { let u=0,v=0; while(!u)u=rnd(); while(!v)v=rnd(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); };
+  const total = CFG.bars4h*16 + 32;
+  const end = new Date(Date.UTC(+cutStr.slice(0,4), +cutStr.slice(5,7)-1, +cutStr.slice(8,10), +cutStr.slice(11,13), +cutStr.slice(14,16)));
+  const pad = n => String(n).padStart(2,'0');
+  const ts = d => `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00`;
+  const m15 = []; let p = 3900, drift = 0;
+  for(let k=total; k>=1; k--){
+    if(rnd()<0.01) drift = (rnd()-0.5)*0.0006;
+    const vol = 0.0011*(rnd()<0.02 ? 4 : 1);
+    const o = p, c = o*(1+drift+vol*gauss());
+    const h = Math.max(o,c)*(1+Math.abs(gauss())*0.0005), l = Math.min(o,c)*(1-Math.abs(gauss())*0.0005);
+    const st=new Date(end.getTime()-k*15*60000); m15.push({t:ts(st), te:ts(new Date(st.getTime()+15*60000)), closed:false, o, h, l, c}); p = c;
+  }
+  const h4 = [];
+  for(let i=m15.length%16; i<m15.length; i+=16){
+    const g = m15.slice(i,i+16);
+    h4.push({t:g[0].t, te:g[g.length-1].te, closed:false, o:g[0].o, h:Math.max(...g.map(x=>x.h)), l:Math.min(...g.map(x=>x.l)), c:g[g.length-1].c});
+  }
+  return {c4:h4.slice(-CFG.bars4h), c15:m15.slice(-CFG.bars15)};
+}
+
+/* =====================================================================
+   Analyse
+   ===================================================================== */
+function atr(c, p=14){
+  const tr = c.map((x,i)=> i ? Math.max(x.h-x.l, Math.abs(x.h-c[i-1].c), Math.abs(x.l-c[i-1].c)) : x.h-x.l);
+  const out = []; let s = 0;
+  for(let i=0;i<c.length;i++){
+    if(i<p){ s+=tr[i]; out.push(s/(i+1)); } else out.push((out[i-1]*(p-1)+tr[i])/p);
+  }
+  return out;
+}
+function ema(v, p){ const k=2/(p+1), out=[]; v.forEach((x,i)=>out.push(i?x*k+out[i-1]*(1-k):x)); return out; }
+
+/* Support/Resistance: Swing-Pivots → Cluster (Toleranz in ATR) → Score aus Berührungen, Aktualität, Nähe */
+function srLevels(c, A, {L,R,tol,perSide}, price){
+  const n = c.length, a = A[n-1], T = a*tol, pts = [];
+  for(let i=L;i<n-R;i++){
+    let isH=true, isL=true;
+    for(let k=i-L;k<=i+R;k++){ if(k===i) continue; if(c[k].h>c[i].h) isH=false; if(c[k].l<c[i].l) isL=false; }
+    if(isH) pts.push({p:c[i].h,i}); if(isL) pts.push({p:c[i].l,i});
+  }
+  pts.sort((x,y)=>x.p-y.p);
+  const cl = [];
+  for(const q of pts){
+    const last = cl[cl.length-1];
+    if(last && q.p-last.mean <= T){ last.pts.push(q); last.mean = last.pts.reduce((s,z)=>s+z.p,0)/last.pts.length; }
+    else cl.push({pts:[q], mean:q.p});
+  }
+  const lv = cl.map(k=>{
+    const lastI = Math.max(...k.pts.map(z=>z.i));
+    return {price:k.mean, touches:k.pts.length, lastT:c[lastI].t,
+            score: k.pts.length + 1.5*lastI/n - 0.08*Math.abs(k.mean-price)/a};
+  });
+  const pick = (arr, kind) => arr.sort((x,y)=>y.score-x.score).slice(0,perSide).map(x=>({...x, kind}));
+  return [...pick(lv.filter(x=>x.price>price),'R'), ...pick(lv.filter(x=>x.price<=price),'S')].sort((x,y)=>y.price-x.price);
+}
+
+/* Buy-/Sell-Zonen: letzte Gegenkerze vor einem Impuls (> k·ATR), solange nicht per Schlusskurs gebrochen */
+function findZones(c, A, {impulseATR, perSide}, price){
+  const n = c.length, raw = [];
+  for(let i=1;i<n-3;i++){
+    const a = A[i], x = c[i], n1 = c[i+1];
+    const nx = [c[i+1],c[i+2],c[i+3]];
+    const up = Math.max(...nx.map(z=>z.c)) - x.h, dn = x.l - Math.min(...nx.map(z=>z.c));
+    if(x.c<x.o && n1.c>n1.o && up>impulseATR*a) raw.push({type:'buy', i, top:x.h, bot:x.l});
+    if(x.c>x.o && n1.c<n1.o && dn>impulseATR*a) raw.push({type:'sell',i, top:x.h, bot:x.l});
+  }
+  const active = [];
+  for(const z of raw){
+    let broken=false, tested=false;
+    for(let j=z.i+1;j<n;j++){
+      if(z.type==='buy'){ if(c[j].c<z.bot){broken=true;break;} if(j>z.i+3 && c[j].l<=z.top) tested=true; }
+      else { if(c[j].c>z.top){broken=true;break;} if(j>z.i+3 && c[j].h>=z.bot) tested=true; }
+    }
+    if(!broken) active.push({...z, tested, t0:c[z.i].t});
+  }
+  const sel = (type, dist) => {
+    const out = [];
+    active.filter(z=>z.type===type).sort((p,q)=>dist(p)-dist(q)).forEach(z=>{
+      if(out.length<perSide && !out.some(o=>z.bot<=o.top && z.top>=o.bot)) out.push(z);
+    });
+    return out;
+  };
+  return [...sel('buy', z=>Math.abs(price-z.top)), ...sel('sell', z=>Math.abs(z.bot-price))];
+}
+
+/* Fair Value Gaps: 3-Kerzen-Muster; Farbe nach mittlerer (Verdrängungs-)Kerze */
+function findFVG(c, A, {minATR}, lookback){
+  const n = c.length, out = [];
+  for(let i=Math.max(1,n-lookback); i<n-1; i++){
+    const a=c[i-1], d=c[i+1], m=A[i]*minATR;
+    if(a.te && (c[i].t!==a.te || d.t!==c[i].te)) continue;   // keine FVGs über Handelspausen (Wochenende, Tagesschluss)
+    let f=null;
+    if(d.l>a.h && d.l-a.h>=m) f={type:'bull', top:d.l, bot:a.h};
+    else if(d.h<a.l && a.l-d.h>=m) f={type:'bear', top:a.l, bot:d.h};
+    if(!f) continue;
+    f.i=i; f.t0=c[i-1].t; f.t1=null; f.open=true;
+    for(let j=i+2;j<n;j++){
+      if((f.type==='bull' && c[j].l<=f.bot) || (f.type==='bear' && c[j].h>=f.top)){ f.open=false; f.t1=c[j].t; break; }
+    }
+    out.push(f);
+  }
+  return out;
+}
+
+function analyze(c4, c15, meta){
+  const A4 = atr(c4), A15 = atr(c15);
+  const price = c15[c15.length-1].c;
+  const e50 = ema(c4.map(x=>x.c),50), n4 = c4.length;
+  const slope = e50[n4-1]-e50[n4-6];
+  const bias = c4[n4-1].c>e50[n4-1] && slope>0 ? 'Bullisch' : c4[n4-1].c<e50[n4-1] && slope<0 ? 'Bärisch' : 'Neutral';
+  return {
+    meta:{...meta, price, atr4:A4[n4-1], atr15:A15[c15.length-1], bias, ema50_4h:e50[n4-1], lastBar15:c15[c15.length-1].t, lastBar4:c4[n4-1].t},
+    lv4: srLevels(c4, A4, CFG.sr.h4, price),
+    lv15: srLevels(c15, A15, CFG.sr.m15, price),
+    z4: findZones(c4, A4, CFG.zone, price).map(z=>({...z, tf:'4H'})),
+    z15: findZones(c15, A15, CFG.zone, price).map(z=>({...z, tf:'15m'})),
+    f4: findFVG(c4, A4, CFG.fvg, CFG.fvg.lookback4).map(f=>({...f, tf:'4H'})),
+    f15: findFVG(c15, A15, CFG.fvg, CFG.fvg.lookback15).map(f=>({...f, tf:'15m'})),
+    c4, c15
+  };
+}
+
+/* =====================================================================
+   Chart-Renderer (Canvas)
+   ===================================================================== */
+class Chart{
+  constructor(cv, bars){
+    this.cv=cv; this.ctx=cv.getContext('2d'); this.c=[]; this.ov=null;
+    this.defBars=bars; this.bars=bars; this.offset=0; this.rightPad=10; this.mouse=null; this.drag=null;
+    new ResizeObserver(()=>this.draw()).observe(cv);
+    cv.addEventListener('wheel', e=>{ e.preventDefault(); this.bars=Math.round(Math.min(Math.max(this.bars*(e.deltaY>0?1.12:0.89),30), this.c.length+this.rightPad)); this.draw(); }, {passive:false});
+    cv.addEventListener('pointerdown', e=>{ this.drag={x:e.clientX, off:this.offset}; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointerup', ()=>{ this.drag=null; });
+    cv.addEventListener('pointermove', e=>{
+      const r=cv.getBoundingClientRect(); this.mouse={x:e.clientX-r.left, y:e.clientY-r.top};
+      if(this.drag){ const bw=(r.width-70)/this.bars; this.offset=Math.round(Math.min(Math.max(this.drag.off+(e.clientX-this.drag.x)/bw,0), Math.max(this.c.length-20,0))); }
+      this.draw();
+    });
+    cv.addEventListener('pointerleave', ()=>{ this.mouse=null; this.draw(); });
+    cv.addEventListener('dblclick', ()=>{ this.bars=this.defBars; this.offset=0; this.draw(); });
+  }
+  setData(c, ov){ this.c=c; this.ov=ov; this.draw(); }
+  idxOf(t){ let lo=0, hi=this.c.length; while(lo<hi){ const m=(lo+hi)>>1; if(this.c[m].t<t) lo=m+1; else hi=m; } return lo; }
+  draw(){
+    const cv=this.cv, dpr=window.devicePixelRatio||1, W=cv.clientWidth, H=cv.clientHeight;
+    if(!W||!H) return;
+    if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){ cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); }
+    const g=this.ctx, C=CFG.colors; g.setTransform(dpr,0,0,dpr,0,0);
+    const AX=70, BX=22, PW=W-AX, PH=H-BX;
+    g.fillStyle=C.bg; g.fillRect(0,0,W,H);
+    const c=this.c, n=c.length;
+    if(!n){ g.fillStyle='#1d2330'; g.font='14px system-ui'; g.fillText('Keine Daten – „Jetzt analysieren" klicken.', 20, 30); return; }
+    const bw=PW/this.bars, start=n-this.bars+this.rightPad-this.offset;
+    const X = i => (i-start+0.5)*bw;
+    const i0=Math.max(0,Math.floor(start)), i1=Math.min(n-1,Math.ceil(start+this.bars));
+    let lo=Infinity, hi=-Infinity;
+    for(let i=i0;i<=i1;i++){ lo=Math.min(lo,c[i].l); hi=Math.max(hi,c[i].h); }
+    const pad=(hi-lo)*0.07||1; lo-=pad; hi+=pad;
+    const Y = p => 6+(hi-p)/(hi-lo)*(PH-12);
+    const P = y => hi-(y-6)/(PH-12)*(hi-lo);
+
+    // Raster + Preisachse
+    const raw=(hi-lo)/8, mag=Math.pow(10,Math.floor(Math.log10(raw))), step=[1,2,2.5,5,10].map(m=>m*mag).find(s=>s>=raw);
+    g.font='11px system-ui'; g.textBaseline='middle';
+    g.fillStyle=C.axisBg; g.fillRect(PW,0,AX,H); g.fillRect(0,PH,W,BX);
+    for(let p=Math.ceil(lo/step)*step;p<=hi;p+=step){
+      const y=Math.round(Y(p))+.5; g.strokeStyle=C.grid; g.lineWidth=1; g.beginPath(); g.moveTo(0,y); g.lineTo(PW,y); g.stroke();
+      g.fillStyle=C.axisText; g.fillText(p.toFixed(step<1?2:0), PW+6, y);
+    }
+    const every=Math.max(1,Math.ceil(110/bw)); g.textBaseline='top';
+    for(let i=i0;i<=i1;i++){
+      if(i%every) continue; const x=X(i); if(x<0||x>PW-40) continue;
+      g.strokeStyle=C.grid; g.beginPath(); g.moveTo(Math.round(x)+.5,0); g.lineTo(Math.round(x)+.5,PH); g.stroke();
+      g.fillStyle=C.axisText; g.fillText(c[i].t.slice(5,16).replace('-','.').replace(' ',' · '), x-30, PH+5);
+    }
+
+    g.save(); g.beginPath(); g.rect(0,0,PW,PH); g.clip();
+    const ov=this.ov||{lines:[],zones:[],fvgs:[]};
+    const xFrom = t => X(this.idxOf(t))-bw/2;
+    const xTo = t => t ? X(this.idxOf(t))+bw/2 : PW;
+
+    // Fair Value Gaps (verblasst grün/rot)
+    for(const f of ov.fvgs){
+      const x0=Math.max(xFrom(f.t0),0), x1=xTo(f.t1); if(x1<0) continue;
+      g.fillStyle = f.type==='bull' ? C.fvgBull : C.fvgBear;
+      g.fillRect(x0, Y(f.top), x1-x0, Y(f.bot)-Y(f.top));
+    }
+    // Zonen (weisse Anfangs-/Endlinie + verblasste Fläche)
+    const zl=[];
+    g.textBaseline='top'; g.font='bold 10px system-ui';
+    for(const z of ov.zones){
+      const x0=Math.max(xFrom(z.t0),0), x1=PW, yt=Y(z.top), yb=Y(z.bot);
+      g.fillStyle=C.zoneFill; g.fillRect(x0,yt,x1-x0,yb-yt);
+      g.strokeStyle=C.zoneLine; g.lineWidth=1.5;
+      g.beginPath(); g.moveTo(x0,yt); g.lineTo(x1,yt); g.moveTo(x0,yb); g.lineTo(x1,yb); g.stroke();
+      zl.push({x:Math.max(x0+4,4), y:yt+3, text:`${z.type==='buy'?'BUY':'SELL'} ZONE ${z.tf}${z.tested?' · getestet':''}`});
+    }
+    // Kerzen
+    const bodyW=Math.max(1,bw*0.7);
+    for(let i=i0;i<=i1;i++){
+      const k=c[i], x=X(i), col=k.c>=k.o?C.bull:C.bear;
+      g.strokeStyle=col; g.lineWidth=1; g.beginPath(); g.moveTo(Math.round(x)+.5,Y(k.h)); g.lineTo(Math.round(x)+.5,Y(k.l)); g.stroke();
+      const yo=Y(k.o), yc=Y(k.c); g.fillStyle=col; g.fillRect(x-bodyW/2, Math.min(yo,yc), bodyW, Math.max(1,Math.abs(yc-yo)));
+    }
+    // Zonen-Beschriftungen über den Kerzen
+    g.font='bold 10px system-ui'; g.textBaseline='top';
+    for(const z of zl){ const w=g.measureText(z.text).width; g.fillStyle='rgba(30,34,40,.75)'; g.fillRect(z.x-2,z.y-1,w+4,13); g.fillStyle='#fff'; g.fillText(z.text,z.x,z.y); }
+    // Support/Resistance-Linien
+    const labels=[];
+    for(const L of ov.lines){
+      const y=Math.round(Y(L.price))+.5; if(y<0||y>PH) continue;
+      g.strokeStyle=L.color; g.lineWidth=L.w; g.setLineDash(L.dash||[]);
+      g.beginPath(); g.moveTo(0,y); g.lineTo(PW,y); g.stroke();
+      g.font='bold 10px system-ui'; g.textBaseline='bottom';
+      const tw=g.measureText(L.tag).width; g.fillStyle=L.color; g.fillRect(2,y-14,tw+6,13); g.fillStyle=L.fg; g.fillText(L.tag, 5, y-2);
+      g.setLineDash([]); labels.push({y, text:fmt(L.price), bg:L.color, fg:L.fg});
+    }
+    // aktueller Kurs
+    const last=c[n-1].c, yl=Math.round(Y(last))+.5;
+    g.strokeStyle=C.price; g.lineWidth=1; g.setLineDash([4,4]); g.beginPath(); g.moveTo(0,yl); g.lineTo(PW,yl); g.stroke(); g.setLineDash([]);
+    labels.push({y:yl, text:fmt(last), bg:'#ffffff', fg:'#000000'});
+    // Fadenkreuz
+    const m=this.mouse;
+    if(m && m.x<PW && m.y<PH){
+      g.strokeStyle='rgba(255,255,255,.7)'; g.setLineDash([3,3]); g.beginPath(); g.moveTo(m.x,0); g.lineTo(m.x,PH); g.moveTo(0,m.y); g.lineTo(PW,m.y); g.stroke(); g.setLineDash([]);
+    }
+    g.restore();
+
+    // Preis-Labels auf der Achse (ohne Überlappung)
+    labels.sort((a,b)=>a.y-b.y); let prev=-99;
+    g.font='bold 11px system-ui'; g.textBaseline='middle';
+    for(const L of labels){ const y=Math.max(L.y, prev+15); prev=y; g.fillStyle=L.bg; g.fillRect(PW+1,y-7,AX-2,14); g.fillStyle=L.fg; g.fillText(L.text, PW+6, y); }
+    if(m && m.x<PW && m.y<PH){
+      g.fillStyle='#1d2330'; g.fillRect(PW+1,m.y-8,AX-2,16); g.fillStyle='#fff'; g.fillText(fmt(P(m.y)), PW+6, m.y);
+      const ii=Math.round(start+m.x/bw-0.5);
+      if(ii>=0&&ii<n){ const k=c[ii]; const txt=`${k.t.slice(0,16)}  O ${fmt(k.o)}  H ${fmt(k.h)}  L ${fmt(k.l)}  C ${fmt(k.c)}`;
+        g.font='11px system-ui'; const tw=g.measureText(txt).width; g.fillStyle='rgba(20,24,30,.85)'; g.fillRect(6,6,tw+12,18); g.fillStyle='#fff'; g.textBaseline='middle'; g.fillText(txt,12,15); }
+    }
+  }
+}
+
+/* =====================================================================
+   Overlays, Zusammenfassung, Szenarien
+   ===================================================================== */
+function lineObjs(lv, tf){
+  const four = tf==='4H';
+  return lv.map(l=>({price:l.price, color:four?CFG.colors.sr4h:CFG.colors.sr15, fg:four?'#000':'#fff', w:four?2:1.5,
+                      tag:`${tf} ${l.kind==='R'?'Resistance':'Support'} · ${l.touches}×`}));
+}
+function overlays(R, chart){
+  const fv = f => !show.openOnly || f.open;
+  if(chart==='4h') return {
+    lines: show.lv4 ? lineObjs(R.lv4,'4H') : [],
+    zones: show.z4 ? R.z4 : [],
+    fvgs: show.f4 ? R.f4.filter(fv) : []
+  };
+  const live = LIVE ? [{price:LIVE.price, color:'#ffd54a', fg:'#000', w:1.5, dash:[2,3], tag:'LIVE · gold-api.com'}] : [];
+  return {
+    lines: [...(show.lv15?lineObjs(R.lv15,'15m'):[]), ...(show.lv4?lineObjs(R.lv4,'4H'):[]), ...live],
+    zones: [...(show.z4?R.z4:[]), ...(show.z15?R.z15:[])],
+    fvgs: [...(show.f4?R.f4.filter(fv):[]), ...(show.f15?R.f15.filter(fv):[])]
+  };
+}
+
+function scenarios(R){
+  const p=R.meta.price, a=R.meta.atr15;
+  const levels=[...R.lv4.map(l=>({...l,tf:'4H'})), ...R.lv15.map(l=>({...l,tf:'15m'}))];
+  const res=levels.filter(l=>l.price>p).sort((x,y)=>x.price-y.price);
+  const sup=levels.filter(l=>l.price<p).sort((x,y)=>y.price-x.price);
+  const zs=[...R.z4,...R.z15];
+  const buy=zs.filter(z=>z.type==='buy' && z.bot<p).sort((x,y)=>y.top-x.top)[0];
+  const sell=zs.filter(z=>z.type==='sell' && z.top>p).sort((x,y)=>x.bot-y.bot)[0];
+  const out={};
+  if(buy){ const e=(buy.top+buy.bot)/2, sl=buy.bot-0.5*a, tps=res.filter(l=>l.price>e).slice(0,2);
+    out.long={zone:buy, entry:e, sl, tps:tps.map(t=>({price:t.price,tf:t.tf})), crv: tps[0]?(tps[0].price-e)/(e-sl):null}; }
+  if(sell){ const e=(sell.top+sell.bot)/2, sl=sell.top+0.5*a, tps=sup.filter(l=>l.price<e).slice(0,2);
+    out.short={zone:sell, entry:e, sl, tps:tps.map(t=>({price:t.price,tf:t.tf})), crv: tps[0]?(e-tps[0].price)/(sl-e):null}; }
+  return out;
+}
+
+function summaryText(R){
+  const m=R.meta, sc=scenarios(R), L=[];
+  L.push(`XAU/USD Analyse – Stand ${m.lastBar15} (${m.tz}) · Quelle: ${m.source||'–'}${m.demo?' [DEMO-DATEN]':''}`);
+  L.push(`Kurs ${fmt(m.price)} | 4H-Bias ${m.bias} (EMA50 ${fmt(m.ema50_4h)}) | ATR 4H ${fmt(m.atr4)} · 15m ${fmt(m.atr15)}`);
+  L.push('4H S/R: '+R.lv4.map(l=>`${l.kind} ${fmt(l.price)} (${l.touches}×)`).join(', '));
+  L.push('15m S/R: '+R.lv15.map(l=>`${l.kind} ${fmt(l.price)} (${l.touches}×)`).join(', '));
+  L.push('Zonen: '+[...R.z4,...R.z15].map(z=>`${z.type.toUpperCase()} ${z.tf} ${fmt(z.bot)}–${fmt(z.top)}${z.tested?' (getestet)':''}`).join(', '));
+  const of=R.f15.filter(f=>f.open);
+  L.push('Offene 15m-FVG: '+(of.length?of.map(f=>`${f.type==='bull'?'Buy':'Sell'} ${fmt(f.bot)}–${fmt(f.top)}`).join(', '):'keine'));
+  if(sc.long) L.push(`Long-Szenario: Entry ~${fmt(sc.long.entry)}, SL ${fmt(sc.long.sl)}, TP ${sc.long.tps.map(t=>fmt(t.price)).join(' / ')||'–'}${sc.long.crv?`, CRV ${sc.long.crv.toFixed(1)}`:''}`);
+  if(sc.short) L.push(`Short-Szenario: Entry ~${fmt(sc.short.entry)}, SL ${fmt(sc.short.sl)}, TP ${sc.short.tps.map(t=>fmt(t.price)).join(' / ')||'–'}${sc.short.crv?`, CRV ${sc.short.crv.toFixed(1)}`:''}`);
+  return L.join('\n');
+}
+
+function renderPanels(R){
+  const m=R.meta;
+  $('asOf').textContent = `${m.lastBar15.slice(0,16)} · ${m.source||''}`;
+  $('demoBadge').style.display = m.demo ? 'inline-block' : 'none';
+  const rows = (lv,cls,tf) => lv.map(l=>`<tr><td><span class="tag ${cls}">${tf}</span></td><td>${l.kind==='R'?'Resistance':'Support'}</td><td>${fmt(l.price)}</td><td>${l.touches}×</td></tr>`).join('');
+  const zrows = [...R.z4,...R.z15].map(z=>`<tr><td><span class="tag ${z.type==='buy'?'tb':'ts'}">${z.type==='buy'?'BUY':'SELL'}</span></td><td>${z.tf}</td><td>${fmt(z.bot)} – ${fmt(z.top)}</td><td>${z.tested?'getestet':'frisch'}</td></tr>`).join('');
+  const of=R.f15.filter(f=>f.open);
+  $('summary').innerHTML = `
+    <table><tr><th>Kurs</th><td>${fmt(m.price)}</td><th>4H-Bias</th><td><b>${m.bias}</b></td></tr>
+    <tr><th>ATR 4H</th><td>${fmt(m.atr4)}</td><th>ATR 15m</th><td>${fmt(m.atr15)}</td></tr></table>
+    <table style="margin-top:8px"><tr><th>TF</th><th>Typ</th><th>Preis</th><th>Ber.</th></tr>${rows(R.lv4,'t4','4H')}${rows(R.lv15,'t15','15m')}</table>
+    <table style="margin-top:8px"><tr><th>Zone</th><th>TF</th><th>Bereich</th><th>Status</th></tr>${zrows||'<tr><td colspan=4>keine aktiven Zonen</td></tr>'}</table>
+    <div class="note">Offene 15m-FVG: ${of.length} (${of.filter(f=>f.type==='bull').length} Buy / ${of.filter(f=>f.type==='bear').length} Sell) · gesamt im Fenster: ${R.f15.length}</div>`;
+  const sc=scenarios(R), blk=(t,s,cls)=> s ? `<div><span class="tag ${cls}">${t}</span> Zone ${s.zone.tf} ${fmt(s.zone.bot)}–${fmt(s.zone.top)}<br>Entry ~<b>${fmt(s.entry)}</b> · SL <b>${fmt(s.sl)}</b><br>Ziele: ${s.tps.map(x=>`${fmt(x.price)} (${x.tf})`).join(' → ')||'–'}${s.crv?` · CRV <b>${s.crv.toFixed(1)}</b>`:''}</div>` : `<div><span class="tag ${cls}">${t}</span> keine passende Zone</div>`;
+  $('scen').innerHTML = blk('LONG', sc.long, 'tb') + blk('SHORT', sc.short, 'ts');
+  ['pngBtn','jsonBtn','copyBtn'].forEach(id=>$(id).disabled=false);
+}
+
+/* =====================================================================
+   Ablauf
+   ===================================================================== */
+const ch15 = new Chart($('c15'), 160), ch4 = new Chart($('c4h'), 120);
+function redraw(){ if(!RESULT) return; ch15.setData(RESULT.c15, overlays(RESULT,'15m')); ch4.setData(RESULT.c4, overlays(RESULT,'4h')); }
+function msg(text, cls){ const el=$('msg'); el.className='msg '+(cls||''); el.textContent=text; }
+
+let running=false;
+async function run(trigger){
+  if(running) return; running=true; $('runBtn').disabled=true;
+  try{
+    const n=nowInTz(S.tz);
+    const fixed = S.fixCut && n.time>=S.runTime;
+    const cut = fixed ? `${n.date} ${S.runTime}:00` : `${n.date} ${n.time}:00`;   // nur abgeschlossene Kerzen
+    const prep = (arr, keep) => arr.filter(x=>x.te<=cut).slice(-keep);
+    let c4, c15, used=S.src, label='Demo';
+    FILE_META = null;
+    if(S.src==='demo'){
+      ({c4,c15}=demoData(cut));
+      msg('Demo-Daten (keine echten Kurse).', 'info');
+    } else {
+      $('status').textContent='Lade XAU/USD-Daten …';
+      const d = await loadGithubFile();
+      label = d.label; c4 = prep(d.c4, CFG.bars4h); c15 = prep(d.c15, CFG.bars15);
+      if(c4.length<60||c15.length<60) throw new Error('Zu wenige Kerzen erhalten.');
+      const info = FILE_META ? ` · Datei erstellt ${FILE_META.generated}` : '';
+      msg(`Analyse erfolgreich (${trigger==='auto'?'automatisch':'manuell'}) · ${label}${info}`, 'ok');
+    }
+    const demo = used==='demo';
+    RESULT = analyze(c4, c15, {tz:S.tz, cut:fixed?cut:null, demo, source:label, runAt:`${n.date} ${n.time}`, trigger});
+    try{ localStorage.setItem(LS_RES, JSON.stringify(RESULT)); }catch(e){}
+    renderPanels(RESULT); redraw();
+    $('status').innerHTML = `Letzte Analyse: <b>${n.date} ${n.time}</b> · Datenstand ${RESULT.meta.lastBar15.slice(0,16)}`;
+  }catch(e){
+    msg(e.message, 'err');
+    $('status').textContent='Fehler beim Abruf.';
+  }finally{ running=false; $('runBtn').disabled=false; }
+}
+
+let lastPoll = 0;
+function tick(){
+  const n=nowInTz(S.tz), we = n.wd==='Sat'||n.wd==='Sun';
+  const [rh,rm]=S.runTime.split(':').map(Number), [h,m]=n.time.split(':').map(Number);
+  let diff=(rh*60+rm)-(h*60+m); if(diff<=0) diff+=1440;
+  $('nextRun').textContent = S.auto ? `Nächste Auto-Analyse in ${Math.floor(diff/60)} h ${diff%60} min (${S.runTime} ${S.tz}).` : 'Automatik ist ausgeschaltet.';
+  if(!S.auto || S.src==='demo' || n.time<S.runTime || (S.skipWe && we)) return;
+  if(S.src==='github'){
+    const haveToday = RESULT && RESULT.meta.lastBar15 && RESULT.meta.lastBar15.slice(0,10)===n.date;
+    if(!haveToday && Date.now()-lastPoll > 5*60000){ lastPoll=Date.now(); run('auto'); }   // alle 5 min prüfen, bis die Action geliefert hat
+  }
+}
+
+function readForm(){ S.src=$('src').value; S.runTime=$('runTime').value||'07:00'; S.tz=$('tz').value; S.auto=$('auto').checked; S.fixCut=$('fixCut').checked; S.skipWe=$('skipWe').checked; }
+function fillForm(){ $('src').value=S.src; $('runTime').value=S.runTime; $('tz').value=S.tz; $('auto').checked=S.auto; $('fixCut').checked=S.fixCut; $('skipWe').checked=S.skipWe; }
+
+function download(name, href){ const a=document.createElement('a'); a.href=href; a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
+
+$('runBtn').onclick=()=>{ readForm(); saveSettings(); run('manual'); };
+$('saveBtn').onclick=()=>{ readForm(); saveSettings(); msg('Einstellungen gespeichert.','ok'); tick(); };
+document.querySelectorAll('[data-t]').forEach(cb=>cb.onchange=()=>{ show[cb.dataset.t]=cb.checked; redraw(); });
+$('pngBtn').onclick=()=>download(`XAUUSD_15m_${RESULT.meta.lastBar15.slice(0,16).replace(/[: ]/g,'-')}.png`, $('c15').toDataURL('image/png'));
+$('jsonBtn').onclick=()=>{ const {c4,c15,...rest}=RESULT; download(`XAUUSD_Analyse_${RESULT.meta.lastBar15.slice(0,10)}.json`, URL.createObjectURL(new Blob([JSON.stringify(rest,null,2)],{type:'application/json'}))); };
+$('copyBtn').onclick=async()=>{ try{ await navigator.clipboard.writeText(summaryText(RESULT)); msg('Zusammenfassung kopiert.','ok'); }catch(e){ msg('Kopieren nicht möglich: '+e.message,'err'); } };
+
+fillForm();
+try{ const saved=JSON.parse(localStorage.getItem(LS_RES)||'null'); if(saved&&saved.c15){ RESULT=saved; renderPanels(RESULT); redraw(); $('status').textContent=`Gespeicherte Analyse vom ${saved.meta.runAt}`; } }catch(e){}
+run('initial');
+tick(); setInterval(tick, 15000);
+updateLive(); setInterval(updateLive, 60000);
+</script>
+</body>
+</html>
