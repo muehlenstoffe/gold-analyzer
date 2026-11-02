@@ -3,8 +3,8 @@ name: XAUUSD Daten & Seite
 on:
   schedule:
     # GitHub rechnet in UTC: 05:05 UTC = 07:05 Sommerzeit, 06:05 UTC = 07:05 Winterzeit.
-    # Der jeweils zu frühe Lauf wird vom Skript automatisch übersprungen.
-    - cron: '5 5,6 * * 1-5'
+    # Zu frühe Läufe überspringt das Skript. Der Lauf um :35 ist die Absicherung, falls der erste scheitert.
+    - cron: '5,35 5,6 * * 1-5'
   workflow_dispatch:
     inputs:
       mode:

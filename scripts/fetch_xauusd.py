@@ -8,6 +8,9 @@ Quelle: Dukascopy Bank SA (Genf), Spot XAU/USD, Bid-Preise.
 - heutiger Tag:           Ticks pro Stunde (HHh_ticks.bi5) -> eigene Minuten-Kerzen
 Der Live-Kurs von gold-api.com dient nur zur Kontrolle der Preisskala.
 
+Abgeschlossene Tage und Monate werden in data/cache/ gespeichert und nie erneut geladen. So braucht ein
+normaler Lauf nur wenige Downloads und Dukascopy drosselt nicht (HTTP 503).
+
 MODE=cut    -> Stand 07:00 (Europe/Zurich); vor 07:00 und am Wochenende passiert nichts
 MODE=latest -> aktuellste abgeschlossene Kerzen (manueller Lauf)
 """
@@ -27,26 +30,53 @@ SYMBOL, KEEP4, KEEP15 = "XAUUSD", 300, 1000
 FMT = "%Y-%m-%d %H:%M:00"
 HEADERS = {"User-Agent": "Mozilla/5.0 (xauusd-analyzer; GitHub Action)"}
 CANDLE, TICK = ">5i1f", ">3i2f"   # Kerze: Zeit(s), Open, Close, Low, High, Volumen | Tick: Zeit(ms), Ask, Bid, AskVol, BidVol
+CACHE = OUT / "cache"
+RETRY_BASE = float(os.environ.get("RETRY_BASE", "5"))      # Sekunden; Wartezeit wächst pro Versuch
+PAUSE = float(os.environ.get("PAUSE", "0.5"))              # Pause zwischen Downloads
 requests_done = 0
 
 
+class Throttled(RuntimeError):
+    pass
+
+
 def get(url: str) -> bytes:
+    """Lädt eine Datei. 404 = (noch) nicht vorhanden. Bei 503/429/Netzfehlern bis zu 7 Versuche mit wachsender Pause."""
     global requests_done
     err = None
-    for attempt in range(4):
+    for attempt in range(7):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30) as r:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=40) as r:
                 requests_done += 1
-                time.sleep(0.15)          # Server schonen
+                time.sleep(PAUSE)
                 return r.read()
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                return b""                # Datei (noch) nicht vorhanden
+                return b""
             err = e
-        except Exception as e:            # Netzwerkfehler -> erneut versuchen
+            wait = e.headers.get("Retry-After") if e.headers else None
+            delay = float(wait) if wait and wait.isdigit() else RETRY_BASE * (attempt + 1)
+        except Exception as e:
             err = e
-        time.sleep(2 * (attempt + 1))
-    raise RuntimeError(f"Download fehlgeschlagen: {url} ({err})")
+            delay = RETRY_BASE * (attempt + 1)
+        print(f"  Server bremst ({err}) – neuer Versuch in {delay:.0f}s")
+        time.sleep(delay)
+    raise Throttled(f"Download fehlgeschlagen: {url} ({err})")
+
+
+def cache_load(name: str):
+    p = CACHE / name
+    return [tuple(r) for r in json.loads(p.read_text())] if p.exists() else None
+
+
+def cache_save(name: str, rows: list) -> None:
+    CACHE.mkdir(parents=True, exist_ok=True)
+    (CACHE / name).write_text(json.dumps([list(r) for r in rows], separators=(",", ":")))
+
+
+def to_15m(rows: list) -> list:
+    """Minuten -> 15min-Rohkerzen (spart Platz im Zwischenspeicher)."""
+    return [(k, *b, 1) for k, b in aggregate(rows, lambda ms: ms // 900000 * 900000).items()]
 
 
 def bi5(url: str, fmt: str) -> list:
@@ -148,26 +178,53 @@ def main() -> None:
     first_min_day = min(today - dt.timedelta(days=16), today.replace(day=1))
     for n in (3, 2, 1):
         y, m = month_back(today.year, today.month, n)
-        rows = hours_of_month(y, m)
-        if not rows and n == 1:          # Vormonat noch nicht veröffentlicht -> Tageswerte nehmen
+        name = f"h1-{y:04d}-{m:02d}.json"
+        rows = cache_load(name)
+        if rows is None:
+            try:
+                rows = hours_of_month(y, m)
+                if rows:
+                    cache_save(name, rows)
+            except Throttled as e:
+                print(f"Warnung: {e}")
+                rows = []
+        if not rows and n == 1:          # Vormonat fehlt -> Tageswerte nehmen
             first_min_day = min(first_min_day, dt.date(y, m, 1))
         hour_rows += rows
     print(f"Stunden-Kerzen aus Monatsdateien: {len(hour_rows)}")
 
     # 2) Minuten-Kerzen: abgeschlossene Tage aus Tagesdateien, heute aus Tick-Dateien
-    minute_rows, d = [], first_min_day
+    minute_rows, d, cached, missing = [], first_min_day, 0, []
     while d < today:
-        rows = minutes_of_day(d) if d.weekday() != 5 else []        # samstags kein Handel
-        if not any(r[5] > 0 for r in rows) and d >= today - dt.timedelta(days=2) and d.weekday() != 5:
-            for hh in range(24):                                     # Tagesdatei fehlt noch -> Ticks
-                rows += minutes_from_ticks(d, hh)
+        name = f"m15-{d.isoformat()}.json"
+        rows = cache_load(name)
+        if rows is not None:
+            cached += 1
+        elif d.weekday() == 5:                                       # samstags kein Handel
+            rows = []
+        else:
+            try:
+                rows = minutes_of_day(d)
+                complete = any(r[5] > 0 for r in rows)
+                if not complete and d >= today - dt.timedelta(days=2):
+                    for hh in range(24):                             # Tagesdatei fehlt noch -> Ticks
+                        rows += minutes_from_ticks(d, hh)
+                    complete = True
+                rows = to_15m(rows)
+                if complete or d <= today - dt.timedelta(days=3):    # nur fertige Tage speichern
+                    cache_save(name, rows)
+            except Throttled as e:
+                print(f"Warnung: Tag {d} übersprungen ({e})")
+                missing.append(d.isoformat())
+                rows = []
         minute_rows += rows
         d += dt.timedelta(days=1)
-    for hh in range(24):
+    for hh in range(24):                                             # heute: Ticks, ohne diese geht es nicht
         if dt.datetime(today.year, today.month, today.day, hh, tzinfo=UTC) >= cut_utc:
             break
         minute_rows += minutes_from_ticks(today, hh)
-    print(f"Minuten-Kerzen: {len(minute_rows)} · Downloads: {requests_done}")
+    print(f"Tage aus Zwischenspeicher: {cached}" + (f" · fehlend: {', '.join(missing)}" if missing else ""))
+    print(f"Rohkerzen: {len(minute_rows)} · Downloads in diesem Lauf: {requests_done}")
     if not minute_rows:
         sys.exit("Keine Daten von Dukascopy erhalten – Datei bleibt unverändert.")
 
@@ -204,7 +261,7 @@ def main() -> None:
 
     result = {"source": "XAU/USD Spot (Dukascopy, Bid)", "tz": TZ_NAME, "mode": mode,
               "cut": cut.strftime(FMT) if mode == "cut" else None, "generated": now.strftime("%Y-%m-%d %H:%M"),
-              "live_check": live, "c4": to_list(h4, 240, KEEP4), "c15": to_list(m15, 15, KEEP15)}
+              "live_check": live, "missing_days": missing, "c4": to_list(h4, 240, KEEP4), "c15": to_list(m15, 15, KEEP15)}
     print(f"4H: {len(result['c4'])} Kerzen · 15min: {len(result['c15'])} Kerzen · letzte 15min {result['c15'][-1]['t'] if result['c15'] else '-'}")
     if len(result["c4"]) < 60 or len(result["c15"]) < 60:
         sys.exit("Zu wenige Kerzen – Datei wird nicht überschrieben.")
